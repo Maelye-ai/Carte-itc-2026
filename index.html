@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Carte 2D & distribution — Prototype ITC 2026 x LEA</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+<style>
+  :root {
+    --navy: #16233f;
+    --navy-light: #1f3358;
+    --gold: #c9a227;
+    --gold-light: #e8c85a;
+    --bg: #f4f5f7;
+    --card: #ffffff;
+    --text: #1b2434;
+    --muted: #6b7280;
+    --line: #e3e5eb;
+    --ok: #2e8b57;
+    --wip: #c9a227;
+    --todo: #9aa0ab;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  header {
+    background: var(--navy);
+    color: #fff;
+    padding: 18px 28px;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 6px;
+    border-bottom: 3px solid var(--gold);
+  }
+  header h1 {
+    margin: 0;
+    font-size: 1.15rem;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+  }
+  header .subtitle {
+    font-size: 0.85rem;
+    color: #c3cbdc;
+  }
+  .layout {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    min-height: calc(100vh - 68px);
+  }
+  aside {
+    background: var(--card);
+    border-right: 1px solid var(--line);
+    padding: 20px;
+    overflow-y: auto;
+  }
+  aside h2 {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin: 0 0 14px 0;
+  }
+  .site-card {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+    cursor: pointer;
+    transition: border-color 0.15s ease, transform 0.1s ease;
+  }
+  .site-card:hover {
+    border-color: var(--gold);
+    transform: translateX(2px);
+  }
+  .site-card .name {
+    font-weight: 700;
+    font-size: 0.95rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .badge {
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 3px 9px;
+    border-radius: 999px;
+    color: #fff;
+    white-space: nowrap;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .badge.ok { background: var(--ok); }
+  .badge.wip { background: var(--wip); color: #2a2200; }
+  .badge.todo { background: var(--todo); }
+  .site-card .coords {
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+  .provisoire-tag {
+    display: inline-block;
+    margin-top: 6px;
+    font-size: 0.68rem;
+    color: #a15c00;
+    background: #fff3e0;
+    padding: 2px 7px;
+    border-radius: 4px;
+  }
+  .note-box {
+    background: #f0f2f6;
+    border-left: 3px solid var(--gold);
+    padding: 10px 12px;
+    font-size: 0.78rem;
+    color: var(--muted);
+    border-radius: 4px;
+    margin-top: 4px;
+    margin-bottom: 18px;
+    line-height: 1.4;
+  }
+  .site-photo {
+    width: 100%;
+    height: 84px;
+    border-radius: 6px;
+    background: linear-gradient(135deg, #eef0f4, #e3e6ec);
+    border: 1px dashed #c7cbd6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #9aa0ab;
+    margin-top: 8px;
+    font-size: 0.68rem;
+    text-align: center;
+    gap: 4px;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .site-photo img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .progress-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .progress-track {
+    flex: 1;
+    height: 6px;
+    background: #e6e8ee;
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    border-radius: 999px;
+  }
+  .progress-pct {
+    font-size: 0.7rem;
+    color: var(--muted);
+    min-width: 30px;
+    text-align: right;
+  }
+  .whatsapp-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: #25D366;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    cursor: pointer;
+    width: 100%;
+    margin-bottom: 18px;
+    text-decoration: none;
+  }
+  .whatsapp-btn:hover { background: #1ebe5a; }
+  #map {
+    height: calc(100vh - 68px);
+    width: 100%;
+  }
+  .leaflet-popup-content b { color: var(--navy); }
+  .legend {
+    background: rgba(255,255,255,0.95);
+    padding: 10px 14px;
+    border-radius: 8px;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.15);
+    font-size: 0.78rem;
+    line-height: 1.7;
+  }
+  .legend .dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+  footer {
+    grid-column: 1 / -1;
+  }
+  @media (max-width: 720px) {
+    .layout { grid-template-columns: 1fr; }
+    #map { height: 60vh; }
+    aside { border-right: none; border-bottom: 1px solid var(--line); }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Rôle 4 — Carte 2D &amp; distribution</h1>
+    <div class="subtitle">Prototype interactif Leaflet + GeoJSON — Projet ITC 2026 x LEA</div>
+  </div>
+  <div class="subtitle">Babalola Yemi Maelye</div>
+</header>
+
+<div class="layout">
+  <aside>
+    <a id="whatsapp-share" class="whatsapp-btn" href="#" target="_blank" rel="noopener">
+      📲 Partager la carte sur WhatsApp
+    </a>
+
+    <h2>Sites suivis</h2>
+    <div id="site-list"></div>
+
+    <h2 style="margin-top: 24px;">À noter</h2>
+    <div class="note-box">
+      Coordonnées <strong>provisoires</strong> en attendant confirmation par LEA (rôle 1). Statuts et avancement affichés sont des exemples à remplacer par les données réelles du pipeline. Photos à ajouter une fois disponibles (case cliquable ci-dessous, prévue pour upload).
+    </div>
+  </aside>
+
+  <main>
+    <div id="map"></div>
+  </main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script>
+  // --- Données GeoJSON des sites (coordonnées provisoires) ---
+  const sitesGeoJSON = {
+    type: "FeatureCollection",
+    features: [
+      {
+        type: "Feature",
+        properties: {
+          name: "Bongouanou",
+          status: "wip",
+          statusLabel: "En cours",
+          progress: 55,
+          photo: null,
+          provisoire: true
+        },
+        geometry: { type: "Point", coordinates: [-4.2000, 6.6167] } // [lon, lat]
+      },
+      {
+        type: "Feature",
+        properties: {
+          name: "Béoumi",
+          status: "todo",
+          statusLabel: "À démarrer",
+          progress: 10,
+          photo: null,
+          provisoire: true
+        },
+        geometry: { type: "Point", coordinates: [-5.5667, 7.6667] }
+      },
+      {
+        type: "Feature",
+        properties: {
+          name: "Gagnoa",
+          status: "ok",
+          statusLabel: "Terminé",
+          progress: 100,
+          photo: null,
+          provisoire: true
+        },
+        geometry: { type: "Point", coordinates: [-5.9506, 6.1319] }
+      }
+    ]
+  };
+
+  const statusColor = { ok: "#2e8b57", wip: "#c9a227", todo: "#9aa0ab" };
+
+  // --- Carte Leaflet centrée sur la Côte d'Ivoire ---
+  const map = L.map('map').setView([6.9, -5.2], 7);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors',
+    maxZoom: 18
+  }).addTo(map);
+
+  const markers = {};
+
+  const geoLayer = L.geoJSON(sitesGeoJSON, {
+    pointToLayer: function (feature, latlng) {
+      return L.circleMarker(latlng, {
+        radius: 10,
+        fillColor: statusColor[feature.properties.status],
+        color: "#16233f",
+        weight: 2,
+        fillOpacity: 0.9
+      });
+    },
+    onEachFeature: function (feature, layer) {
+      const p = feature.properties;
+      layer.bindPopup(
+        `<b>${p.name}</b><br>` +
+        `Statut : ${p.statusLabel}<br>` +
+        `Avancement : ${p.progress}%<br>` +
+        (p.provisoire ? `<span style="color:#a15c00;">Coordonnées provisoires</span>` : "")
+      );
+      markers[p.name] = layer;
+    }
+  }).addTo(map);
+
+  map.fitBounds(geoLayer.getBounds(), { padding: [40, 40] });
+
+  // Légende
+  const legend = L.control({ position: 'bottomright' });
+  legend.onAdd = function () {
+    const div = L.DomUtil.create('div', 'legend');
+    div.innerHTML =
+      '<div style="font-weight:700; margin-bottom:4px;">Statut du site</div>' +
+      '<div><span class="dot" style="background:' + statusColor.ok + '"></span>Terminé</div>' +
+      '<div><span class="dot" style="background:' + statusColor.wip + '"></span>En cours</div>' +
+      '<div><span class="dot" style="background:' + statusColor.todo + '"></span>À démarrer</div>';
+    return div;
+  };
+  legend.addTo(map);
+
+  // --- Liste des sites dans la barre latérale ---
+  const listEl = document.getElementById('site-list');
+  const badgeClass = { ok: "ok", wip: "wip", todo: "todo" };
+
+  sitesGeoJSON.features.forEach(f => {
+    const p = f.properties;
+    const [lon, lat] = f.geometry.coordinates;
+    const card = document.createElement('div');
+    card.className = 'site-card';
+
+    const photoInner = p.photo
+      ? `<img src="${p.photo}" alt="Photo ${p.name}">`
+      : `📷 Photo à venir`;
+
+    card.innerHTML =
+      `<div class="name">${p.name} <span class="badge ${badgeClass[p.status]}">${p.statusLabel}</span></div>` +
+      `<div class="coords">Lat ${lat.toFixed(4)}, Lon ${lon.toFixed(4)}</div>` +
+      `<div class="provisoire-tag">Coordonnées provisoires</div>` +
+      `<div class="progress-row">` +
+        `<div class="progress-track"><div class="progress-fill" style="width:${p.progress}%; background:${statusColor[p.status]};"></div></div>` +
+        `<div class="progress-pct">${p.progress}%</div>` +
+      `</div>` +
+      `<div class="site-photo">${photoInner}</div>`;
+
+    card.addEventListener('click', () => {
+      map.setView([lat, lon], 12, { animate: true });
+      markers[p.name].openPopup();
+    });
+    listEl.appendChild(card);
+  });
+
+  // --- Partage WhatsApp (lien direct vers cette carte) ---
+  // Une fois la page hébergée (ex. GitHub Pages, sous-domaine SIMAT), remplacer
+  // window.location.href n'est utile qu'après déploiement ; en local, il pointera vers le fichier local.
+  const waBtn = document.getElementById('whatsapp-share');
+  const pageUrl = window.location.href;
+  const waMessage = `Carte de suivi des sites (Bongouanou, Béoumi, Gagnoa) — ${pageUrl}`;
+  waBtn.href = `https://wa.me/?text=${encodeURIComponent(waMessage)}`;
+</script>
+
+</body>
+</html>
