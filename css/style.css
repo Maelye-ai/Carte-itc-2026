@@ -382,21 +382,7 @@ html, body {
 }
 
 /* Indicateur d'interaction 3D */
-.hint-3d-overlay {
-  position: absolute;
-  bottom: 400px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(13, 22, 41, 0.7);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 999px;
-  padding: 30px 30px;
-  font-size: 0.72rem;
-  color: var(--text-muted);
-  pointer-events: none;
-  z-index: 999;
-}
+
 
 /* ==========================================================================
    CARROUSEL DU BAS (LISTE DES SITES STYLE GOOGLE MAPS)
