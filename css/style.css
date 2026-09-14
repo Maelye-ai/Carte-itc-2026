@@ -385,7 +385,7 @@ html, body {
 .hint-3d-overlay {
   position: absolute;
   bottom: 120px;
-  left: 50%;
+  left: 70%;
   transform: translateX(-50%);
   background: rgba(13, 22, 41, 0.7);
   backdrop-filter: blur(8px);
