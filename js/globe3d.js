@@ -1,677 +1,436 @@
 /**
- * MOTEUR 3D DU GLOBE TERRESTRE (STYLE GOOGLE EARTH / GOOGLE MAPS 3D)
- * LAGUNES EXPLORATION AFRIQUE (LEA)
+ * CONTRÔLEUR GÉNÉRAL DE L'APPLICATION
+ * LAGUNES EXPLORATION AFRIQUE (LEA) - STYLE GOOGLE MAPS 3D
  */
 
-class LEAGlobe3D {
-  constructor(containerId, options = {}) {
-    this.container = document.getElementById(containerId);
-    if (!this.container) throw new Error(`Conteneur #${containerId} introuvable.`);
-
-    this.options = Object.assign({
-      radius: 10,
-      initialLat: 7.54,
-      initialLon: -5.55,
-      initialDistance: 23,
-      minDistance: 11.5,
-      maxDistance: 45,
-      autoRotateSpeed: 0.0012,
-      onSiteSelect: null,
-      onCameraMove: null
-    }, options);
-
-    this.R = this.options.radius;
-    this.sites = window.LEA_DATA ? window.LEA_DATA.sites : [];
-    this.markers = [];
-    this.pulseRings = [];
-    this.isUserInteracting = false;
-    this.autoRotate = true;
-    this.idleTimer = null;
-    this.isTransitioning = false;
-
-    // Interaction state
-    this.mouse = new THREE.Vector2();
-    this.raycaster = new THREE.Raycaster();
-    this.hoveredMarker = null;
-
-    // Camera spherical parameters
-    this.spherical = {
-      radius: this.options.initialDistance,
-      theta: 0,
-      phi: Math.PI / 2.2
-    };
+class LEAApp {
+  constructor() {
+    this.currentView = "3d"; // "3d" ou "2d"
+    this.activeSite = null;
+    this.activeFilter = "all";
+    this.searchQuery = "";
+    this.isTourRunning = false;
 
     this.init();
   }
 
   init() {
-    this.setupScene();
-    this.setupLights();
-    this.setupStars();
-    this.setupEarth();
-    this.setupAtmosphere();
-    this.setupIvoryCoastContour();
-    this.setupMarkers();
-    this.setupEvents();
-    this.focusOnIvoryCoast(false);
-    this.animate();
-  }
+    // 1. Initialisation des moteurs
+    this.education = new LEAEducation();
 
-  setupScene() {
-    this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.FogExp2(0x050914, 0.012);
-
-    const width = this.container.clientWidth || window.innerWidth || 800;
-    const height = this.container.clientHeight || window.innerHeight || 600;
-
-    this.camera = new THREE.PerspectiveCamera(42, width / height, 0.1, 1000);
-    this.camera.position.set(0, 0, this.options.initialDistance);
-
-    this.renderer = new THREE.WebGLRenderer({
-      antialias: true,
-      alpha: true,
-      powerPreference: "high-performance"
+    this.globe3d = new LEAGlobe3D("globe-3d-container", {
+      onSiteSelect: (site) => this.selectSite(site, "3d")
     });
-    this.renderer.setSize(width, height);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 
-    if (this.renderer.outputEncoding) {
-      this.renderer.outputEncoding = THREE.sRGBEncoding;
+    this.map2d = new LEAMap2D("map-2d-container", {
+      onSiteSelect: (site) => this.selectSite(site, "2d")
+    });
+
+    // 2. Rendu de l'interface
+    this.renderBottomCarousel();
+    this.setupEventListeners();
+
+    // 3. Préparer le premier site actif
+    if (window.LEA_DATA && window.LEA_DATA.sites.length > 0) {
+      this.activeSite = window.LEA_DATA.sites[0];
     }
 
-    this.renderer.domElement.style.display = "block";
-    this.renderer.domElement.style.width = "100%";
-    this.renderer.domElement.style.height = "100%";
-
-    this.container.appendChild(this.renderer.domElement);
-    this.globeGroup = new THREE.Group();
-    this.scene.add(this.globeGroup);
+    // Exposer l'instance globale
+    window.LEAUi = this;
   }
 
-  setupLights() {
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.75);
-    this.scene.add(ambientLight);
+  setupEventListeners() {
+    // Bascule de Vue 3D / 2D
+    const btn3d = document.getElementById("btn-view-3d");
+    const btn2d = document.getElementById("btn-view-2d");
+    const viewport3d = document.getElementById("globe-3d-container");
+    const viewport2d = document.getElementById("map-2d-container");
 
-    this.sunLight = new THREE.DirectionalLight(0xfff8ee, 1.3);
-    this.sunLight.position.set(25, 12, 20);
-    this.scene.add(this.sunLight);
-
-    const rimLight = new THREE.DirectionalLight(0x38bdf8, 0.45);
-    rimLight.position.set(-20, -10, -15);
-    this.scene.add(rimLight);
-  }
-
-  setupStars() {
-    const starGeom = new THREE.BufferGeometry();
-    const starCount = 1000;
-    const positions = new Float32Array(starCount * 3);
-    const colors = new Float32Array(starCount * 3);
-
-    for (let i = 0; i < starCount; i++) {
-      const r = 80 + Math.random() * 80;
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.acos(Math.random() * 2 - 1);
-
-      positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-      positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
-      positions[i * 3 + 2] = r * Math.cos(phi);
-
-      const variant = Math.random();
-      if (variant > 0.8) {
-        colors[i * 3] = 0.8; colors[i * 3 + 1] = 0.9; colors[i * 3 + 2] = 1.0;
-      } else if (variant > 0.6) {
-        colors[i * 3] = 1.0; colors[i * 3 + 1] = 0.9; colors[i * 3 + 2] = 0.6;
-      } else {
-        colors[i * 3] = 1.0; colors[i * 3 + 1] = 1.0; colors[i * 3 + 2] = 1.0;
+    btn3d.addEventListener("click", () => {
+      this.currentView = "3d";
+      btn3d.classList.add("active");
+      btn2d.classList.remove("active");
+      viewport3d.classList.add("active");
+      viewport2d.classList.remove("active");
+      document.getElementById("btn-start-tour").style.display = "none";
+      if (this.activeSite) {
+        this.globe3d.flyToSite(this.activeSite, 1400);
       }
-    }
-
-    starGeom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    starGeom.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-
-    const starMat = new THREE.PointsMaterial({
-      size: 0.35,
-      vertexColors: true,
-      transparent: true,
-      opacity: 0.85
     });
 
-    const starField = new THREE.Points(starGeom, starMat);
-    this.scene.add(starField);
-  }
-
-  // Crée un canvas procédural comme texture de base immédiate
-  createProceduralEarthCanvas() {
-    const canvas = document.createElement("canvas");
-    canvas.width = 1024;
-    canvas.height = 512;
-    const ctx = canvas.getContext("2d");
-
-    // Océans profonds
-    const grad = ctx.createLinearGradient(0, 0, 0, 512);
-    grad.addColorStop(0, "#0c1d36");
-    grad.addColorStop(0.5, "#142c4f");
-    grad.addColorStop(1, "#0c1d36");
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 1024, 512);
-
-    // Grille de latitude / longitude subtile
-    ctx.strokeStyle = "rgba(56, 189, 248, 0.12)";
-    ctx.lineWidth = 1;
-    for (let x = 0; x <= 1024; x += 64) {
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, 512);
-      ctx.stroke();
-    }
-    for (let y = 0; y <= 512; y += 32) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(1024, y);
-      ctx.stroke();
-    }
-
-    // Équateur en doré subtil
-    ctx.strokeStyle = "rgba(212, 175, 55, 0.25)";
-    ctx.beginPath();
-    ctx.moveTo(0, 256);
-    ctx.lineTo(1024, 256);
-    ctx.stroke();
-
-    return new THREE.CanvasTexture(canvas);
-  }
-
-  setupEarth() {
-    const loader = new THREE.TextureLoader();
-
-    // Textures Base64 embarquées (100% fiables, zéro erreur CORS, fonctionnent en file:// et http://)
-    const dayTexUrl = (window.LEA_TEXTURES && window.LEA_TEXTURES.earthDay)
-      ? window.LEA_TEXTURES.earthDay
-      : "assets/textures/earth_atmos_2048.jpg";
-
-    const cloudsTexUrl = (window.LEA_TEXTURES && window.LEA_TEXTURES.clouds)
-      ? window.LEA_TEXTURES.clouds
-      : "assets/textures/earth_clouds_1024.png";
-
-    const earthGeometry = new THREE.SphereGeometry(this.R, 64, 64);
-    const earthMaterial = new THREE.MeshPhongMaterial({
-      color: 0xffffff,
-      specular: new THREE.Color(0x223344),
-      shininess: 15
-    });
-
-    loader.load(dayTexUrl, (tex) => {
-      if (this.renderer.outputEncoding) tex.encoding = THREE.sRGBEncoding;
-      earthMaterial.map = tex;
-      earthMaterial.needsUpdate = true;
-    });
-
-    this.earthMesh = new THREE.Mesh(earthGeometry, earthMaterial);
-    this.globeGroup.add(this.earthMesh);
-
-    // Couche de nuages dynamiques
-    const cloudGeometry = new THREE.SphereGeometry(this.R * 1.009, 64, 64);
-    const cloudMaterial = new THREE.MeshLambertMaterial({
-      transparent: true,
-      opacity: 0.42,
-      depthWrite: false
-    });
-
-    loader.load(cloudsTexUrl, (tex) => {
-      cloudMaterial.map = tex;
-      cloudMaterial.needsUpdate = true;
-    });
-
-    this.cloudsMesh = new THREE.Mesh(cloudGeometry, cloudMaterial);
-    this.globeGroup.add(this.cloudsMesh);
-  }
-
-  setupAtmosphere() {
-    const atmosphereGeom = new THREE.SphereGeometry(this.R * 1.07, 48, 48);
-    const atmosphereMat = new THREE.ShaderMaterial({
-      vertexShader: `
-        varying vec3 vNormal;
-        void main() {
-          vNormal = normalize(normalMatrix * normal);
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    btn2d.addEventListener("click", () => {
+      this.currentView = "2d";
+      btn2d.classList.add("active");
+      btn3d.classList.remove("active");
+      viewport2d.classList.add("active");
+      viewport3d.classList.remove("active");
+      document.getElementById("btn-start-tour").style.display = "";
+      setTimeout(() => {
+        this.map2d.invalidateSize();
+        if (this.activeSite) {
+          this.map2d.flyToSite(this.activeSite, 10);
+        } else {
+          this.map2d.fitBoundsAll();
         }
-      `,
-      fragmentShader: `
-        varying vec3 vNormal;
-        void main() {
-          float dotVal = dot(vNormal, vec3(0.0, 0.0, 1.0));
-          float intensity = pow(max(0.0, 0.65 - dotVal), 2.0);
-          gl_FragColor = vec4(0.25, 0.65, 1.0, 1.0) * intensity * 0.85;
-        }
-      `,
-      blending: THREE.AdditiveBlending,
-      side: THREE.BackSide,
-      transparent: true
+      }, 200);
     });
 
-    const atmosphere = new THREE.Mesh(atmosphereGeom, atmosphereMat);
-    this.globeGroup.add(atmosphere);
-  }
+    // Le bouton Visite Guidée n'a de sens qu'en vue 2D (point de départ vers le survol 3D)
+    document.getElementById("btn-start-tour").style.display = this.currentView === "2d" ? "" : "none";
 
-  setupIvoryCoastContour() {
-    if (!window.LEA_DATA || !window.LEA_DATA.ivoryCoastBounds) return;
-    const poly = window.LEA_DATA.ivoryCoastBounds.polygon;
-    const points = [];
-
-    for (let i = 0; i < poly.length; i++) {
-      const [lon, lat] = poly[i];
-      const vec = this.latLonToVector3(lat, lon, this.R * 1.005);
-      points.push(vec);
+    // Recherche temps réel
+    const searchInput = document.getElementById("global-search-input");
+    if (searchInput) {
+      searchInput.addEventListener("input", (e) => {
+        this.searchQuery = e.target.value.toLowerCase();
+        this.filterAndRenderCarousel();
+      });
     }
 
-    const curve = new THREE.CatmullRomCurve3(points, true);
-    const lineGeom = new THREE.BufferGeometry().setFromPoints(curve.getPoints(120));
-    const lineMat = new THREE.LineBasicMaterial({
-      color: 0xe8c85a,
-      linewidth: 2,
-      transparent: true,
-      opacity: 0.85
-    });
-
-    const borderLine = new THREE.Line(lineGeom, lineMat);
-    this.globeGroup.add(borderLine);
-
-    // Disque lumineux sous la Côte d'Ivoire
-    const centerVec = this.latLonToVector3(7.54, -5.55, this.R * 1.002);
-    const glowGeom = new THREE.CircleGeometry(0.85, 32);
-    const glowMat = new THREE.MeshBasicMaterial({
-      color: 0xd4af37,
-      transparent: true,
-      opacity: 0.15,
-      side: THREE.DoubleSide
-    });
-    const zoneGlow = new THREE.Mesh(glowGeom, glowMat);
-    zoneGlow.position.copy(centerVec);
-    zoneGlow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), centerVec.clone().normalize());
-    this.globeGroup.add(zoneGlow);
-  }
-
-  setupMarkers() {
-    const statusColors = {
-      ok: { main: 0x10b981, hex: "#10b981", glow: 0x34d399 },
-      wip: { main: 0xd4af37, hex: "#d4af37", glow: 0xfde047 },
-      todo: { main: 0x38bdf8, hex: "#38bdf8", glow: 0x7dd3fc }
-    };
-
-    this.sites.forEach(site => {
-      const pos = this.latLonToVector3(site.lat, site.lon, this.R);
-      const normal = pos.clone().normalize();
-      const col = statusColors[site.status] || statusColors.wip;
-
-      const markerGroup = new THREE.Group();
-      markerGroup.userData = { site: site };
-
-      // Pilier vertical lumineux
-      const stemHeight = 0.85;
-      const stemGeom = new THREE.CylinderGeometry(0.025, 0.045, stemHeight, 16);
-      stemGeom.translate(0, stemHeight / 2, 0);
-      const stemMat = new THREE.MeshStandardMaterial({
-        color: col.main,
-        roughness: 0.3,
-        metalness: 0.7,
-        emissive: col.main,
-        emissiveIntensity: 0.4
-      });
-      const stem = new THREE.Mesh(stemGeom, stemMat);
-      stem.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
-      stem.position.copy(pos);
-      markerGroup.add(stem);
-
-      // Balise sphérique sommet
-      const headRadius = 0.14;
-      const headGeom = new THREE.SphereGeometry(headRadius, 20, 20);
-      const headMat = new THREE.MeshStandardMaterial({
-        color: 0xffffff,
-        emissive: col.main,
-        emissiveIntensity: 0.85,
-        roughness: 0.2,
-        metalness: 0.8
-      });
-      const headMesh = new THREE.Mesh(headGeom, headMat);
-      const headPos = pos.clone().add(normal.clone().multiplyScalar(stemHeight));
-      headMesh.position.copy(headPos);
-      headMesh.userData = { isHead: true, site: site };
-      markerGroup.add(headMesh);
-
-      // Anneau halo au sommet
-      const haloGeom = new THREE.RingGeometry(0.18, 0.26, 24);
-      const haloMat = new THREE.MeshBasicMaterial({
-        color: col.glow,
-        transparent: true,
-        opacity: 0.65,
-        side: THREE.DoubleSide
-      });
-      const haloMesh = new THREE.Mesh(haloGeom, haloMat);
-      haloMesh.position.copy(headPos);
-      haloMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
-      markerGroup.add(haloMesh);
-
-      // Onde radar pulsante au sol
-      const ringGeom = new THREE.RingGeometry(0.08, 0.28, 32);
-      const ringMat = new THREE.MeshBasicMaterial({
-        color: col.main,
-        transparent: true,
-        opacity: 0.75,
-        side: THREE.DoubleSide
-      });
-      const baseRing = new THREE.Mesh(ringGeom, ringMat);
-      baseRing.position.copy(pos.clone().add(normal.clone().multiplyScalar(0.02)));
-      baseRing.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
-      markerGroup.add(baseRing);
-
-      this.pulseRings.push({
-        mesh: baseRing,
-        maxScale: 2.4,
-        scale: 1.0,
-        speed: 0.015 + Math.random() * 0.005
-      });
-
-      this.globeGroup.add(markerGroup);
-      this.markers.push({
-        group: markerGroup,
-        head: headMesh,
-        stem: stem,
-        halo: haloMesh,
-        site: site,
-        position: pos,
-        headPosition: headPos
+    // Filtres par chips (Tous, Or, Lithium, En cours...)
+    const filterChips = document.querySelectorAll(".filter-chip");
+    filterChips.forEach(chip => {
+      chip.addEventListener("click", () => {
+        filterChips.forEach(c => c.classList.remove("active"));
+        chip.classList.add("active");
+        this.activeFilter = chip.getAttribute("data-filter");
+        this.filterAndRenderCarousel();
       });
     });
+
+    // Boutons de navigation (Zoom, Home, Boussole)
+    const zoomInBtn = document.getElementById("nav-zoom-in");
+    const zoomOutBtn = document.getElementById("nav-zoom-out");
+    const homeBtn = document.getElementById("nav-home-btn");
+    const compassBtn = document.getElementById("nav-compass-btn");
+
+    if (zoomInBtn) {
+      zoomInBtn.addEventListener("click", () => {
+        if (this.currentView === "3d") {
+          this.globe3d.camera.position.z = Math.max(11.5, this.globe3d.camera.position.z - 2.5);
+        } else {
+          this.map2d.map.zoomIn();
+        }
+      });
+    }
+
+    if (zoomOutBtn) {
+      zoomOutBtn.addEventListener("click", () => {
+        if (this.currentView === "3d") {
+          this.globe3d.camera.position.z = Math.min(42, this.globe3d.camera.position.z + 3);
+        } else {
+          this.map2d.map.zoomOut();
+        }
+      });
+    }
+
+    if (homeBtn) {
+      homeBtn.addEventListener("click", () => {
+        if (this.currentView === "3d") {
+          this.globe3d.focusOnIvoryCoast(true);
+        } else {
+          this.map2d.fitBoundsAll();
+        }
+      });
+    }
+
+    if (compassBtn) {
+      compassBtn.addEventListener("click", () => {
+        if (this.currentView === "3d") {
+          this.globe3d.focusOnIvoryCoast(true);
+        } else {
+          this.map2d.map.setBearing ? this.map2d.map.setBearing(0) : this.map2d.fitBoundsAll();
+        }
+      });
+    }
+
+    // Bouton Visite Guidée (Tour 3D)
+    const tourBtn = document.getElementById("btn-start-tour");
+    if (tourBtn) {
+      tourBtn.addEventListener("click", () => this.toggleGuidedTour());
+    }
+
+    // Bouton Espace Pédagogique
+    const eduBtn = document.getElementById("btn-open-edu");
+    if (eduBtn) {
+      eduBtn.addEventListener("click", () => this.openEducationModal());
+    }
+
+    // Fermeture du Drawer
+    const closeDrawerBtn = document.getElementById("drawer-close-btn");
+    if (closeDrawerBtn) {
+      closeDrawerBtn.addEventListener("click", () => this.closeSiteDrawer());
+    }
+
+    // Fermeture de la Modale Pédagogique
+    const closeEduBtn = document.getElementById("modal-edu-close");
+    const modalOverlay = document.getElementById("modal-edu-overlay");
+    if (closeEduBtn) {
+      closeEduBtn.addEventListener("click", () => this.closeEducationModal());
+    }
+    if (modalOverlay) {
+      modalOverlay.addEventListener("click", (e) => {
+        if (e.target === modalOverlay) this.closeEducationModal();
+      });
+    }
+
+    // Onglets de la Modale Pédagogique
+    const tabBtns = document.querySelectorAll(".modal-tab-btn");
+    tabBtns.forEach(btn => {
+      btn.addEventListener("click", () => {
+        tabBtns.forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        const tabKey = btn.getAttribute("data-tab");
+        this.switchEduTab(tabKey);
+      });
+    });
+
+    // Partage WhatsApp global
+    const waGlobalBtn = document.getElementById("btn-share-wa");
+    if (waGlobalBtn) {
+      waGlobalBtn.addEventListener("click", () => this.shareOnWhatsApp());
+    }
   }
 
-  latLonToVector3(lat, lon, radius) {
-    const phi = (90 - lat) * (Math.PI / 180);
-    const theta = (lon + 180) * (Math.PI / 180);
-    return new THREE.Vector3(
-      -radius * Math.sin(phi) * Math.cos(theta),
-      radius * Math.cos(phi),
-      radius * Math.sin(phi) * Math.sin(theta)
-    );
+  // Rendu du carrousel de cartes de sites en bas
+  renderBottomCarousel() {
+    const container = document.getElementById("bottom-carousel");
+    if (!container || !window.LEA_DATA) return;
+
+    const sites = this.getFilteredSites();
+    container.innerHTML = "";
+
+    if (sites.length === 0) {
+      container.innerHTML = `
+        <div style="background:var(--panel-bg); padding:12px 20px; border-radius:12px; color:var(--text-muted); font-size:0.85rem;">
+          Aucun site minier ne correspond aux critères sélectionnés.
+        </div>
+      `;
+      return;
+    }
+
+    sites.forEach(site => {
+      const card = document.createElement("div");
+      card.className = `carousel-site-card ${this.activeSite && this.activeSite.id === site.id ? 'active' : ''}`;
+      card.id = `card-site-${site.id}`;
+
+      const statusClass = `badge-${site.status}`;
+      const fillCol = site.status === 'ok' ? '#10b981' : site.status === 'wip' ? '#d4af37' : '#38bdf8';
+
+      card.innerHTML = `
+        <div class="card-top-row">
+          <div class="card-site-name">${site.name}</div>
+          <span class="card-badge ${statusClass}">${site.statusLabel.split(' ')[0]}</span>
+        </div>
+        <div class="card-site-region">${site.region} • ${site.mineralPrimary}</div>
+        <div class="card-progress-section">
+          <div class="card-progress-track">
+            <div class="card-progress-fill" style="width: ${site.progress}%; background: ${fillCol};"></div>
+          </div>
+          <div class="card-progress-text">${site.progress}%</div>
+        </div>
+      `;
+
+      card.addEventListener("click", () => {
+        this.selectSite(site);
+      });
+
+      container.appendChild(card);
+    });
   }
 
-  setupEvents() {
-    let isMouseDown = false;
-    let isRightClick = false;
-    let prevMouse = { x: 0, y: 0 };
-    let totalDrag = 0;
+  getFilteredSites() {
+    let sites = window.LEA_DATA ? window.LEA_DATA.sites : [];
 
-    const onPointerDown = (e) => {
-      isMouseDown = true;
-      isRightClick = (e.button === 2);
-      this.autoRotate = false;
-      this.isUserInteracting = true;
-      clearTimeout(this.idleTimer);
-      totalDrag = 0;
-      prevMouse = { x: e.clientX, y: e.clientY };
-      this.container.style.cursor = isRightClick ? "ns-resize" : "grabbing";
-    };
+    if (this.activeFilter !== "all") {
+      sites = sites.filter(s => {
+        if (this.activeFilter === "wip") return s.status === "wip";
+        if (this.activeFilter === "ok") return s.status === "ok";
+        if (this.activeFilter === "todo") return s.status === "todo";
+        if (this.activeFilter === "gold") return s.minerals.some(m => m.includes("Or"));
+        if (this.activeFilter === "lithium") return s.minerals.some(m => m.includes("Lithium"));
+        if (this.activeFilter === "bauxite") return s.minerals.some(m => m.includes("Bauxite"));
+        return true;
+      });
+    }
 
-    const onPointerMove = (e) => {
-      const rect = this.container.getBoundingClientRect();
-      this.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      this.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-
-      if (!isMouseDown) {
-        this.checkMarkerHover();
-        return;
-      }
-
-      const dx = e.clientX - prevMouse.x;
-      const dy = e.clientY - prevMouse.y;
-      totalDrag += Math.abs(dx) + Math.abs(dy);
-
-      if (isRightClick) {
-        this.spherical.phi -= dy * 0.006;
-        this.spherical.phi = Math.max(0.15, Math.min(Math.PI / 2.05, this.spherical.phi));
-      } else {
-        this.globeGroup.rotation.y += dx * 0.004;
-        this.globeGroup.rotation.x += dy * 0.004;
-        this.globeGroup.rotation.x = Math.max(-1.3, Math.min(1.3, this.globeGroup.rotation.x));
-      }
-
-      prevMouse = { x: e.clientX, y: e.clientY };
-    };
-
-    const onPointerUp = (e) => {
-      if (isMouseDown && totalDrag < 6) {
-        this.handleMarkerClick(e);
-      }
-      isMouseDown = false;
-      this.container.style.cursor = "grab";
-      this.idleTimer = setTimeout(() => {
-        this.autoRotate = true;
-        this.isUserInteracting = false;
-      }, 4500);
-    };
-
-    const onWheel = (e) => {
-      e.preventDefault();
-      clearTimeout(this.idleTimer);
-      this.autoRotate = false;
-
-      const zoomFactor = e.deltaY * 0.015;
-      this.camera.position.z = Math.max(
-        this.options.minDistance,
-        Math.min(this.options.maxDistance, this.camera.position.z + zoomFactor)
+    if (this.searchQuery) {
+      sites = sites.filter(s =>
+        s.name.toLowerCase().includes(this.searchQuery) ||
+        s.region.toLowerCase().includes(this.searchQuery) ||
+        s.commune.toLowerCase().includes(this.searchQuery) ||
+        s.minerals.join(" ").toLowerCase().includes(this.searchQuery) ||
+        s.permitNumber.toLowerCase().includes(this.searchQuery)
       );
-
-      this.idleTimer = setTimeout(() => {
-        this.autoRotate = true;
-      }, 4000);
-    };
-
-    this.container.addEventListener("pointerdown", onPointerDown);
-    window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", onPointerUp);
-    this.container.addEventListener("wheel", onWheel, { passive: false });
-    this.container.addEventListener("contextmenu", (e) => e.preventDefault());
-    window.addEventListener("resize", () => this.onWindowResize());
-  }
-
-  checkMarkerHover() {
-    this.raycaster.setFromCamera(this.mouse, this.camera);
-    const heads = this.markers.map(m => m.head);
-    const hits = this.raycaster.intersectObjects(heads, true);
-
-    if (hits.length > 0) {
-      const marker = this.markers.find(m => m.head === hits[0].object);
-      if (marker && this.hoveredMarker !== marker) {
-        if (this.hoveredMarker) this.resetMarkerScale(this.hoveredMarker);
-        this.hoveredMarker = marker;
-        marker.head.scale.set(1.4, 1.4, 1.4);
-        marker.halo.scale.set(1.3, 1.3, 1.3);
-        this.container.style.cursor = "pointer";
-        this.show3DTooltip(marker.site, hits[0].point);
-      }
-    } else {
-      if (this.hoveredMarker) {
-        this.resetMarkerScale(this.hoveredMarker);
-        this.hoveredMarker = null;
-        this.container.style.cursor = "grab";
-        this.hide3DTooltip();
-      }
     }
+
+    return sites;
   }
 
-  resetMarkerScale(marker) {
-    marker.head.scale.set(1, 1, 1);
-    marker.halo.scale.set(1, 1, 1);
+  filterAndRenderCarousel() {
+    this.renderBottomCarousel();
   }
 
-  handleMarkerClick(e) {
-    this.raycaster.setFromCamera(this.mouse, this.camera);
-    const heads = this.markers.map(m => m.head);
-    const hits = this.raycaster.intersectObjects(heads, true);
+  // Sélection d'un site
+  selectSite(site, sourceView = null) {
+    this.activeSite = site;
 
-    if (hits.length > 0) {
-      const marker = this.markers.find(m => m.head === hits[0].object);
-      if (marker) {
-        this.flyToSite(marker.site);
-        if (typeof this.options.onSiteSelect === "function") {
-          this.options.onSiteSelect(marker.site);
+    // Mise à jour visuelle des cartes du carrousel
+    document.querySelectorAll(".carousel-site-card").forEach(c => c.classList.remove("active"));
+    const activeCard = document.getElementById(`card-site-${site.id}`);
+    if (activeCard) {
+      activeCard.classList.add("active");
+      activeCard.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+    }
+
+    // Animation Caméra 3D
+    if (this.currentView === "3d") {
+      this.globe3d.flyToSite(site);
+    } else {
+      this.map2d.flyToSite(site, 11);
+    }
+
+    // Ouvrir le panneau latéral détaillé
+    this.openSiteDrawer(site.id);
+  }
+
+  // Ouverture et remplissage du Drawer
+  openSiteDrawer(siteId) {
+    const site = window.LEA_DATA.sites.find(s => s.id === siteId) || this.activeSite;
+    if (!site) return;
+
+    this.activeSite = site;
+    const drawer = document.getElementById("site-drawer");
+
+    // Remplir les données
+    document.getElementById("drawer-site-title").textContent = site.name;
+    document.getElementById("drawer-site-region").textContent = `${site.region} — ${site.commune}`;
+
+    const badgeEl = document.getElementById("drawer-site-badge");
+    badgeEl.textContent = site.statusLabel;
+    badgeEl.className = `card-badge badge-${site.status}`;
+
+    document.getElementById("stat-permit").textContent = site.permitNumber;
+    document.getElementById("stat-area").textContent = `${site.permitAreaKm2} km²`;
+    document.getElementById("stat-drilled").textContent = `${site.drilledMeters} m`;
+    document.getElementById("stat-samples").textContent = site.samplesAnalyzed;
+
+    document.getElementById("drawer-site-summary").textContent = site.summary;
+
+    // Travaux réalisés
+    const workListEl = document.getElementById("drawer-work-list");
+    workListEl.innerHTML = site.workCompleted.map(w => `<li>${w}</li>`).join("");
+
+    // RSE et écologie
+    const rseListEl = document.getElementById("drawer-rse-list");
+    rseListEl.innerHTML = site.rseAndEnvironment.map(r => `<li>${r}</li>`).join("");
+
+    // Bouton inspecter carotte
+    const inspectCoreBtn = document.getElementById("btn-inspect-core-drawer");
+    if (inspectCoreBtn) {
+      inspectCoreBtn.onclick = () => {
+        this.openEducationModal("core", site.id);
+      };
+    }
+
+    // Bouton partage WhatsApp spécifique à ce site
+    const waSiteBtn = document.getElementById("drawer-wa-btn");
+    if (waSiteBtn) {
+      const msg = `Découvrez les travaux d'exploration minière de LAGUNES EXPLORATION AFRIQUE (LEA) sur le site de ${site.name} (${site.region}) : ${site.statusLabel} avec ${site.drilledMeters}m de carottages réalisés ! ${window.location.href}`;
+      waSiteBtn.href = `https://wa.me/?text=${encodeURIComponent(msg)}`;
+    }
+
+    drawer.classList.add("open");
+  }
+
+  closeSiteDrawer() {
+    const drawer = document.getElementById("site-drawer");
+    if (drawer) drawer.classList.remove("open");
+  }
+
+  // Visite guidée 3D
+  toggleGuidedTour() {
+    const tourBtn = document.getElementById("btn-start-tour");
+    const tourBanner = document.getElementById("tour-indicator-banner");
+
+    if (this.isTourRunning) {
+      this.isTourRunning = false;
+      this.globe3d.stopGuidedTour();
+      tourBtn.innerHTML = "▶ Visite Guidée 3D";
+      tourBtn.classList.remove("running");
+      if (tourBanner) tourBanner.style.display = "none";
+    } else {
+      this.isTourRunning = true;
+      if (this.currentView !== "3d") {
+        document.getElementById("btn-view-3d").click();
+      }
+      tourBtn.innerHTML = "⏹ Arrêter le Tour";
+      tourBtn.classList.add("running");
+      if (tourBanner) tourBanner.style.display = "flex";
+
+      this.globe3d.startGuidedTour((site, index, total) => {
+        this.selectSite(site);
+        const tourTitle = document.getElementById("tour-banner-title");
+        if (tourTitle) {
+          tourTitle.textContent = `Étape ${index + 1}/${total} : ${site.name} (${site.mineralPrimary})`;
         }
-      }
+      });
     }
   }
 
-  show3DTooltip(site, point3d) {
-    let tooltip = document.getElementById("globe-3d-tooltip");
-    if (!tooltip) {
-      tooltip = document.createElement("div");
-      tooltip.id = "globe-3d-tooltip";
-      tooltip.className = "globe-tooltip";
-      this.container.appendChild(tooltip);
-    }
+  // Modale Pédagogique
+  openEducationModal(initialTab = "steps", siteId = null) {
+    const modal = document.getElementById("modal-edu-overlay");
+    if (!modal) return;
 
-    const screenPos = this.toScreenPosition(point3d);
-    tooltip.innerHTML = `
-      <div class="tooltip-title">${site.name}</div>
-      <div class="tooltip-region">${site.region}</div>
-      <div class="tooltip-meta">
-        <span class="tooltip-mineral">${site.mineralPrimary}</span>
-        <span class="tooltip-status status-${site.status}">${site.statusLabel}</span>
-      </div>
-    `;
-
-    tooltip.style.left = `${screenPos.x + 12}px`;
-    tooltip.style.top = `${screenPos.y - 20}px`;
-    tooltip.classList.add("visible");
+    modal.classList.add("open");
+    this.switchEduTab(initialTab, siteId);
   }
 
-  hide3DTooltip() {
-    const tooltip = document.getElementById("globe-3d-tooltip");
-    if (tooltip) tooltip.classList.remove("visible");
+  closeEducationModal() {
+    const modal = document.getElementById("modal-edu-overlay");
+    if (modal) modal.classList.remove("open");
   }
 
-  toScreenPosition(vector3) {
-    const vector = vector3.clone().project(this.camera);
-    const widthHalf = this.container.clientWidth / 2;
-    const heightHalf = this.container.clientHeight / 2;
-    return {
-      x: (vector.x * widthHalf) + widthHalf,
-      y: -(vector.y * heightHalf) + heightHalf
-    };
-  }
-
-  flyToSite(site, duration = 1800) {
-    this.autoRotate = false;
-    clearTimeout(this.idleTimer);
-    this.isTransitioning = true;
-
-    const phi = (90 - site.lat) * (Math.PI / 180);
-    const theta = (site.lon + 180) * (Math.PI / 180);
-
-    const targetRotY = -theta + Math.PI / 2;
-    const targetRotX = Math.PI / 2 - phi;
-
-    const startRotX = this.globeGroup.rotation.x;
-    const startRotY = this.globeGroup.rotation.y;
-    const startDist = this.camera.position.z;
-    const targetDist = 13.8;
-
-    let diffY = (targetRotY - startRotY) % (Math.PI * 2);
-    if (diffY < -Math.PI) diffY += Math.PI * 2;
-    if (diffY > Math.PI) diffY -= Math.PI * 2;
-
-    const startTime = performance.now();
-
-    const animateFly = (time) => {
-      const elapsed = time - startTime;
-      const t = Math.min(1, elapsed / duration);
-      const ease = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-
-      this.globeGroup.rotation.x = startRotX + (targetRotX - startRotX) * ease;
-      this.globeGroup.rotation.y = startRotY + diffY * ease;
-
-      const arc = Math.sin(t * Math.PI) * 2.2;
-      this.camera.position.z = startDist + (targetDist - startDist) * ease + arc;
-
-      if (t < 1) {
-        requestAnimationFrame(animateFly);
-      } else {
-        this.isTransitioning = false;
-        this.idleTimer = setTimeout(() => {
-          this.autoRotate = true;
-        }, 5000);
-      }
-    };
-
-    requestAnimationFrame(animateFly);
-  }
-
-  focusOnIvoryCoast(smooth = true) {
-    const ciSite = { lat: 7.54, lon: -5.55 };
-    if (smooth) {
-      this.flyToSite(ciSite, 1600);
-    } else {
-      const phi = (90 - ciSite.lat) * (Math.PI / 180);
-      const theta = (ciSite.lon + 180) * (Math.PI / 180);
-      this.globeGroup.rotation.y = -theta + Math.PI / 2;
-      this.globeGroup.rotation.x = Math.PI / 2 - phi;
-      this.camera.position.z = 21.5;
-    }
-  }
-
-  startGuidedTour(onTourStep) {
-    if (!this.sites || this.sites.length === 0) return;
-    let currentIndex = 0;
-
-    const nextStep = () => {
-      const site = this.sites[currentIndex];
-      this.flyToSite(site, 2000);
-      if (typeof onTourStep === "function") {
-        onTourStep(site, currentIndex, this.sites.length);
-      }
-      currentIndex = (currentIndex + 1) % this.sites.length;
-    };
-
-    nextStep();
-    this.tourInterval = setInterval(nextStep, 6500);
-  }
-
-  stopGuidedTour() {
-    if (this.tourInterval) {
-      clearInterval(this.tourInterval);
-      this.tourInterval = null;
-    }
-  }
-
-  onWindowResize() {
-    const width = this.container.clientWidth || window.innerWidth;
-    const height = this.container.clientHeight || window.innerHeight;
-    this.camera.aspect = width / height;
-    this.camera.updateProjectionMatrix();
-    this.renderer.setSize(width, height);
-  }
-
-  animate() {
-    requestAnimationFrame(() => this.animate());
-
-    if (this.autoRotate && !this.isTransitioning) {
-      this.globeGroup.rotation.y += this.options.autoRotateSpeed;
-      if (this.cloudsMesh) {
-        this.cloudsMesh.rotation.y += this.options.autoRotateSpeed * 1.35;
-      }
-    }
-
-    this.pulseRings.forEach(ring => {
-      ring.scale += ring.speed;
-      if (ring.scale > ring.maxScale) {
-        ring.scale = 1.0;
-      }
-      ring.mesh.scale.set(ring.scale, ring.scale, ring.scale);
-      ring.mesh.material.opacity = Math.max(0, 0.85 * (1 - (ring.scale - 1) / (ring.maxScale - 1)));
+  switchEduTab(tabKey, siteId = null) {
+    // Boutons d'onglets
+    document.querySelectorAll(".modal-tab-btn").forEach(btn => {
+      btn.classList.toggle("active", btn.getAttribute("data-tab") === tabKey);
     });
 
-    this.renderer.render(this.scene, this.camera);
+    // Contenus
+    document.querySelectorAll(".modal-tab-content").forEach(content => {
+      content.classList.remove("active");
+    });
+
+    const activeContent = document.getElementById(`tab-content-${tabKey}`);
+    if (activeContent) activeContent.classList.add("active");
+
+    // Rendu dynamique du contenu selon l'onglet
+    if (tabKey === "steps") {
+      this.education.renderExplorationSteps("tab-steps-container");
+    } else if (tabKey === "comparison") {
+      this.education.renderComparison("tab-comp-container");
+    } else if (tabKey === "core") {
+      const targetSiteId = siteId || (this.activeSite ? this.activeSite.id : "bongouanou");
+      this.education.renderCoreSampleInspector("tab-core-container", targetSiteId);
+    } else if (tabKey === "glossary") {
+      this.education.renderGlossary("tab-glossary-container");
+    }
+  }
+
+  // Partage global sur WhatsApp
+  shareOnWhatsApp() {
+    const title = "Portail 3D d'Exploration Minière — Lagunes Exploration Afrique (LEA)";
+    const desc = "Explorez la cartographie interactive 3D des permis miniers de LEA en Côte d'Ivoire (Bongouanou, Béoumi, Gagnoa) et comprenez le travail d'exploration scientifique et responsable !";
+    const url = window.location.href;
+    const msg = `${title}\n\n${desc}\n\n👉 Accéder à la carte 3D : ${url}`;
+    const waUrl = `https://wa.me/?text=${encodeURIComponent(msg)}`;
+    window.open(waUrl, "_blank");
   }
 }
 
-if (typeof window !== "undefined") {
-  window.LEAGlobe3D = LEAGlobe3D;
-}
+// Initialisation au chargement du DOM
+document.addEventListener("DOMContentLoaded", () => {
+  window.app = new LEAApp();
+});
