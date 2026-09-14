@@ -670,5 +670,6 @@ class LEAGlobe3D {
 
     this.renderer.render(this.scene, this.camera);
   }
+function stopGuidedTour() {
+  controls.autoRotate = true; // Ou isGlobeRotating = true;
 }
-
