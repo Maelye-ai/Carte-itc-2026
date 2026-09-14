@@ -1255,3 +1255,29 @@ html, body {
   cursor: pointer;
   text-align: center;
 }
+
+
+/* Bouton Tour : Style neutre par défaut (Mode 3D) */
+.action-pill-btn.tour-btn {
+  background: var(--panel-bg);
+  border-color: var(--panel-border);
+}
+
+.action-pill-btn.tour-btn:hover {
+  background: rgba(30, 48, 86, 0.9);
+  border-color: var(--panel-border);
+}
+
+/* Effet lumineux bleu : Activé uniquement sur la Carte 2D */
+body.map-2d-active .action-pill-btn.tour-btn,
+#app-viewport.map-2d-active .action-pill-btn.tour-btn {
+  background: linear-gradient(135deg, #1e3a8a, #1e293b);
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+body.map-2d-active .action-pill-btn.tour-btn:hover,
+#app-viewport.map-2d-active .action-pill-btn.tour-btn:hover {
+  border-color: var(--blue-sky);
+  box-shadow: 0 0 15px rgba(56, 189, 248, 0.35);
+  transform: translateY(-1px);
+}
