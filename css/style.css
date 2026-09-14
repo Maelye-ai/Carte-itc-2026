@@ -391,7 +391,7 @@ html, body {
   backdrop-filter: blur(8px);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 999px;
-  padding: 180px 30px;
+  padding: 80px 130px;
   font-size: 0.72rem;
   color: var(--text-muted);
   pointer-events: none;
