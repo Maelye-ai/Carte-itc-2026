@@ -265,19 +265,30 @@ html, body {
   border-color: var(--emerald);
   box-shadow: 0 0 15px rgba(16, 185, 129, 0.35);
 }
-
 /* ==========================================================================
-   FILTRES THÉMATIQUES FLOTTANTS
+   FILTRES THÉMATIQUES FLOTTANTS (CENTRÉS)
    ========================================================================== */
 
 .filter-chips-floating {
   position: absolute;
   top: 76px;
-  left: 16px;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
+  align-items: center;
+  justify-content: center;
   gap: 8px;
   z-index: 999;
-  flex-wrap: wrap;
+  max-width: calc(100vw - 32px);
+  width: max-content;
+  overflow-x: auto;
+  padding: 4px 8px;
+  scrollbar-width: none; /* Cache la barre sur Firefox */
+}
+
+/* Cache la barre de défilement sur Chrome/Safari/Edge */
+.filter-chips-floating::-webkit-scrollbar {
+  display: none;
 }
 
 .filter-chip {
@@ -286,11 +297,13 @@ html, body {
   -webkit-backdrop-filter: blur(10px);
   border: 1px solid var(--panel-border);
   border-radius: 999px;
-  padding: 5px 12px;
+  padding: 6px 14px;
   color: var(--text-muted);
   font-size: 0.76rem;
   font-weight: 600;
   cursor: pointer;
+  white-space: nowrap; /* Évite le retour à la ligne du texte dans le bouton */
+  flex-shrink: 0;
   transition: all var(--transition-fast);
 }
 
@@ -303,6 +316,7 @@ html, body {
   background: rgba(212, 175, 55, 0.2);
   border-color: var(--gold);
   color: var(--gold-light);
+  box-shadow: 0 0 10px rgba(212, 175, 55, 0.2);
 }
 
 /* ==========================================================================
