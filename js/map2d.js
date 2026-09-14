@@ -228,3 +228,13 @@ class LEAMap2D {
 if (typeof window !== "undefined") {
   window.LEAMap2D = LEAMap2D;
 }
+
+// Exemple lors du clic sur le bouton Carte 2D
+document.getElementById('btn-map-2d').addEventListener('click', () => {
+  document.body.classList.add('map-2d-active');
+});
+
+// Lors du retour au Globe 3D
+document.getElementById('btn-globe-3d').addEventListener('click', () => {
+  document.body.classList.remove('map-2d-active');
+});
