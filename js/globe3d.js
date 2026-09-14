@@ -664,12 +664,9 @@ class LEAGlobe3D {
       if (ring.scale > ring.maxScale) {
         ring.scale = 1.0;
       }
-      ring.mesh.scale.set(ring.scale, ring.scale, ring.scale);
+      { ring.mesh.scale.set(ring.scale, ring.scale, ring.scale);
       ring.mesh.material.opacity = Math.max(0, 0.85 * (1 - (ring.scale - 1) / (ring.maxScale - 1)));
     });
 
     this.renderer.render(this.scene, this.camera);
   }
-function stopGuidedTour() {
-  controls.autoRotate = true; // Ou isGlobeRotating = true;
-}
