@@ -384,7 +384,7 @@ html, body {
 /* Indicateur d'interaction 3D */
 .hint-3d-overlay {
   position: absolute;
-  top: 76px;
+  top: 66px;
   right: 18px;
   background: rgba(13, 22, 41, 0.7);
   backdrop-filter: blur(8px);
