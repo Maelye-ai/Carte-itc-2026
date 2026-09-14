@@ -567,7 +567,7 @@ class LEAGlobe3D {
     const theta = (site.lon + 180) * (Math.PI / 180);
 
     const targetRotY = -theta + Math.PI / 2;
-    const targetRotX = (phi - Math.PI / 2) * 0.75;
+    const targetRotX = Math.PI / 2 - phi;
 
     const startRotX = this.globeGroup.rotation.x;
     const startRotY = this.globeGroup.rotation.y;
@@ -612,7 +612,7 @@ class LEAGlobe3D {
       const phi = (90 - ciSite.lat) * (Math.PI / 180);
       const theta = (ciSite.lon + 180) * (Math.PI / 180);
       this.globeGroup.rotation.y = -theta + Math.PI / 2;
-      this.globeGroup.rotation.x = (phi - Math.PI / 2) * 0.6;
+      this.globeGroup.rotation.x = Math.PI / 2 - phi;
       this.camera.position.z = 21.5;
     }
   }
